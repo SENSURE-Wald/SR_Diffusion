@@ -1,93 +1,175 @@
-# Latent Diffusion Sr
+<img src="https://github.com/ESAOpenSR/opensr-model/blob/main/resources/opensr_logo.png?raw=true" width="250"/>
+
+# Latent Diffusion Super-Resolution - Sentinel 2 (LDSR-S2)
+<p align="center">
+  <img src="https://github.com/ESAOpenSR/opensr-model/blob/main/resources/ldsr-s2_schema.png?raw=true" alt="S2 example" width="75%">
+</p>
+
+**Description**: This repository contains the code of the paper [Trustworthy Super-Resolution of Multispectral Sentinel-2 Imagery with Latent Diffusion](https://ieeexplore.ieee.org/abstract/document/10887321). This package contains the latent-diffusion model and weights to super-resolute the RGB-NIR bands of Sentinel-2. It can be embedded in the "opensr-utils" package in order to create a data pipeline for SR products. 
+
+**🧪 Status**: LDSR-S2 has exited the experimental phase as of **v1.0.0**  
+📌 For super-resolving **20m bands**, check out [`SEN2SR`](https://github.com/ESAOpenSR/SEN2SR), or use it alongside LDSR-S2 in the third notebook.
+  
+---
+
+# Table of Contents
+- [🚀 1. Interactive Notebooks - Google Colab](#1--google-colab-demos--interactive-notebooks)
+- [🛠️ 2. Install and Usage - Local](#2-install-and-usage---local)
+  - [🧱 2.1 Weights and Checkpoints](#21-weights-and-checkpoints)
+  - [🖥️ 2.2 HPC and Slurm Launcher](#22-hpc-and-slurm-launcher)
+- [🖼️ 3. Super-Resolution Examples](#3-super-resolution-examples)
+  - [🛰️ 3.1 Example SR Image](#31-example-sr-image)
+  - [🔎 3.2 Demo File and Uncertainty Calculation](#32-demo-file-and-uncertainty-calculation)
+- [🗺️ 4. Inference on S2 Tiles: Data Pipeline](#4-inference-on-s2-tiles-data-pipeline)
+- [📝 5. Notes](#5-notes)
+  - [🎓 5.1 Training](#51-training)
+  - [📚 5.2 Citation](#52-citation)
+  - [📈 5.3 Status](#53-status)
 
 
 
-## Getting started
+## 1. 🚀 Interactive Notebooks - Google Colab
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Run LDSR-S2 directly in Google Colab within seconds! These notebooks let you fetch Sentinel-2 imagery, apply super-resolution, and save results — with or without going through the code. The no-code version even implements a user interface to select and process data.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+| Notebook Name                  | Description                                                                                      | Link                                                                 |
+|-------------------------------|--------------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| **LDSR-S2 No-Code**           | 🔘 No coding required — chose point on a map and download SR results as GeoTIFFs               | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1xhlVjGkHPF1znafSGrWtyZ0wzcogVRCe?usp=sharing) |
+| **LDSR-S2 Walkthrough**              | 🧪 Code-level walkthrough with uncertainty estimation and advanced plotting                       | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1onza61SP5IyiUQM85PtyVLz6JovvQ0TN?usp=sharing) |
+| **LDSR-S2 & SEN2SR**          | 🔄 Use LDSR-S2 alongside SEN2SR to compare results on 10m + 20m bands                             | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1NJuyswsquOLMFc_AP93P_5QcZnbNhGuB?usp=sharing) |
 
-## Add your files
+---
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
 
+
+## 2. 🛠️ Install and Usage - Local
+```bash
+pip install opensr-model
 ```
-cd existing_repo
-git remote add origin https://gitlab.cs.hs-rm.de/cvmr/latent-diffusion-sr.git
-git branch -M main
-git push -uf origin main
+
+Minimal Example  
+```python
+# Get Config
+from io import StringIO
+import requests
+from omegaconf import OmegaConf
+config_url = "https://raw.githubusercontent.com/ESAOpenSR/opensr-model/refs/heads/main/opensr_model/configs/config_10m.yaml"
+response = requests.get(config_url)
+config = OmegaConf.load(StringIO(response.text))
+
+# Get Model
+import torch
+device = "cuda" if torch.cuda.is_available() else "cpu" # set device
+import opensr_model # import pachage
+model = opensr_model.SRLatentDiffusion(config, device=device) # create model
+model.load_pretrained(config.ckpt_version) # load checkpoint
+sr = model.forward(torch.rand(1,4,128,128), sampling_steps=100) # run SR
+```  
+
+### 2.1 🧱 Weights and Checkpoints
+The model should load automatically with the `model.load_pretrained` command. Alternatively, the checkpoints can be found on [HuggingFace](https://huggingface.co/simon-donike/RS-SR-LTDF/tree/main).
+
+### 2.2 🖥️ HPC and Slurm Launcher
+
+For cluster workflows, this repository now also ships an installable HPC launcher built around `cubo`, `opensr-model`, `opensr-utils`, and Slurm.
+
+Install the optional extras:
+
+```bash
+pip install -e .[hpc]
 ```
 
-## Integrate with your tools
+This exposes the `opensr-hpc` CLI:
 
-* [Set up project integrations](https://gitlab.cs.hs-rm.de/cvmr/latent-diffusion-sr/-/settings/integrations)
+```bash
+opensr-hpc validate-config --config deployment/configs/runtime.default.yaml
 
-## Collaborate with your team
+opensr-hpc submit patch \
+  --config deployment/configs/runtime.default.yaml \
+  --lat 52.5200 \
+  --lon 13.4050 \
+  --start-date 2025-07-01 \
+  --end-date 2025-07-03 \
+  --dry-run
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+opensr-hpc submit aoi \
+  --config deployment/configs/runtime.default.yaml \
+  --aoi-path /data/berlin_aoi \
+  --start-date 2025-07-01 \
+  --end-date 2025-07-03 \
+  --dry-run
+```
 
-## Test and Deploy
+See `deployment/README.md` for the full run layout, config schema, AOI settings, and Slurm entrypoint details.
 
-Use the built-in continuous integration in GitLab.
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+# 3. 🖼️ Super-Resolution Examples
 
-***
+## 3.1 🛰️ Example SR Image
+<p align="center">
+  <img src="resources/example2.png" alt="S2 example" width="80%">
+</p>
 
-# Editing this README
+## 3.2 🔎 Demo File and Uncertainty Calculation
+Run the `demo.py` file to see how the package works. It super-resolves an example tensor and saves the corresponding uncertainty map.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+<p align="center">
+  <img src="resources/sr_example.png" alt="SR example" width="80%">
+</p>
 
-## Suggestions for a good README
+<p align="center">
+  <img src="resources/uncertainty_map.png" alt="Uncertainty map" width="50%">
+</p>
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
 
-## Name
-Choose a self-explaining name for your project.
+# 4. 🗺️ Inference on S2 Tiles: Data Pipeline
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+This repository itself exposes the **raw model** for tensor‑level inference. By default it performs **128→512** super‑resolution on 4‑channel tensors (B×4×128×128 → B×4×512×512). It **does not** handle geospatial IO, tiling, or metadata.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+For real‑world workflows on Sentinel‑2 data, please use **`opensr-utils`**:
+- Run inference over **4‑band GeoTIFFs** (e.g., RGB‑NIR) or full Sentinel‑2 **`.SAFE` folders** (including **`.SAFE.zip`**).
+- Handles **tiling**, **overlap blending**, **stitching**, and preserves **CRS/transform**.
+- Works with every model (including this one), define LR‑space `window_size=128`, `factor=4`, overlap, and border trimming.
+- Writes georeferenced outputs (e.g., GeoTIFF/COG), plus basic logs/metadata.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Minimal example (pseudocode; see `opensr-utils` for details):
+```python
+import opensr_utils
+sr_job = opensr_utils.large_file_processing(
+    root="/path/to/S2_tile.SAFE",  # also supports GeoTIFFs and .SAFE.zip
+    model=model,                   # your SRLatentDiffusion instance
+    window_size=(128, 128),        # LR patch size → 512px SR at factor=4
+    factor=4,                      # 10m → 2.5m
+    overlap=12,                    # LR‑space overlap to reduce seams
+    eliminate_border_px=2,         # trim LR‑space border per tile
+    device=device,                 # "cuda"/"cpu"
+    gpus=0,                        # single GPU id or list for multi‑GPU
+)
+```
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+Use the notebooks and `demo.py` for quick starts; for full‑tile processing and proper georeferencing, prefer `opensr-utils`.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+# 5. 📝 Notes
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## 5.1 🎓 Training
+Training is **not supported by default** in this repository due to time and resource constraints. The provided models are implemented as **PyTorch Lightning** modules and ship ready for inference. If you want to train or fine‑tune them, you can extend the module(s) by adding the standard Lightning hooks (e.g., `training_step`, `validation_step`, `configure_optimizers`, and any callbacks or loggers you prefer). If you build a clean, reproducible training pipeline, please consider opening a Pull Request (PR). We’re happy to review community contributions.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## 5.2 📚 Citation
+If you use this model in your work, please cite  
+```tex
+@ARTICLE{ldsrs2,
+  author={Donike, Simon and Aybar, Cesar and Gómez-Chova, Luis and Kalaitzis, Freddie},
+  journal={IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing}, 
+  title={Trustworthy Super-Resolution of Multispectral Sentinel-2 Imagery With Latent Diffusion}, 
+  year={2025},
+  volume={18},
+  number={},
+  pages={6940-6952},
+  doi={10.1109/JSTARS.2025.3542220}}
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## 5.3 📈 Status
+This repository has left the experimental stage with the publication of v1.0.0.   
+[![PyPI Downloads](https://static.pepy.tech/badge/opensr-model)](https://pepy.tech/projects/opensr-model)

@@ -6,6 +6,7 @@ from torch import nn
 import lightning as L
 import torchvision
 
+from opensr_model.autoencoder.lpips_disc_loss import LPIPSWithDiscriminator
 from opensr_model.autoencoder.utils import Downsample, Normalize, ResnetBlock, Upsample, make_attn, nonlinearity
 
 
@@ -594,11 +595,14 @@ class AutoencoderKLLightning(L.LightningModule):
     def __init__(self, config: dict, embed_dim: int, loss, learning_rate):
         super().__init__()
         self.save_hyperparameters()
+        loss_config = config.loss_config
         self.model = AutoencoderKL(config, embed_dim)
-        self.loss = loss
+        self.loss = LPIPSWithDiscriminator(**loss_config)
         self.learning_rate = learning_rate
-        self.kl_loss_weight = config.kl_loss_weight
-        self.kl_warmup_steps = config.kl_warmup_steps
+        # self.kl_loss_weight = config.kl_loss_weight
+        # self.kl_warmup_steps = config.kl_warmup_steps
+
+        self.automatic_optimization = False
 
     def forward(self, input: torch.Tensor, sample_posterior=True):
         return self.model(input, sample_posterior)
@@ -610,10 +614,14 @@ class AutoencoderKLLightning(L.LightningModule):
         rec_loss = self.loss(hr, output)
         kl_loss = self.kl_weight_warmed * posterior.kl().mean()
 
-        self.log(f"{phase}/rec_loss", rec_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f"{phase}/kl_loss", kl_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f"{phase}/posterior_mean", posterior.mean, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f"{phase}/posterior_std", posterior.std, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"{phase}/rec_loss", rec_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"{phase}/kl_loss", kl_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(
+            f"{phase}/posterior_mean", posterior.mean.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            f"{phase}/posterior_std", posterior.std.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True
+        )
         self.log(
             f"{phase}/loss",
             rec_loss + kl_loss,
@@ -629,9 +637,39 @@ class AutoencoderKLLightning(L.LightningModule):
         return self.kl_loss_weight if self.global_step > self.kl_warmup_steps else 0
 
     def training_step(self, batch, _, sample_posterior=True):
-        return self._sample(batch, sample_posterior=sample_posterior, phase="train")
+        _, hr = batch
+        opt_ae, opt_disc = self.optimizers()
+        self.toggle_optimizer(opt_ae)
+        output, posterior = self(hr, sample_posterior)
+
+        # train encoder+decoder
+        aeloss, log_dict_ae = self.loss(
+            hr, output, posterior, 0, self.global_step, last_layer=self.get_last_layer(), split="train"
+        )
+        opt_ae.zero_grad()
+        self.manual_backward(aeloss)
+        opt_ae.step()
+
+        self.untoggle_optimizer(opt_ae)
+        self.log(f"train/aeloss", aeloss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+
+        self.toggle_optimizer(opt_disc)
+        output, posterior = self(hr, sample_posterior)
+        discloss, log_dict_disc = self.loss(
+            hr, output, posterior, 1, self.global_step, last_layer=self.get_last_layer(), split="train"
+        )
+        opt_disc.zero_grad()
+        self.manual_backward(discloss)
+        opt_disc.step()
+        self.untoggle_optimizer(opt_disc)
+        self.log(f"train/discloss", discloss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+
+        return aeloss + discloss
 
     def validation_step(self, batch, _, sample_posterior=True):
+        """
         _, hr = batch
         output, posterior = self(hr, sample_posterior=sample_posterior)
         rec_loss = self.loss(hr, output)
@@ -639,7 +677,7 @@ class AutoencoderKLLightning(L.LightningModule):
         images = torch.cat([hr[:4], output[:4]])
         grid = torchvision.utils.make_grid(images, nrow=hr.size()[0])
         self.log("val/rec_loss", rec_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log("val/kl_loss", kl_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log("val/kl_loss", kl_loss.item(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log(
             "val/loss",
             rec_loss + kl_loss,
@@ -648,9 +686,35 @@ class AutoencoderKLLightning(L.LightningModule):
             prog_bar=True,
             logger=True,
         )
-        self.log(f"val/posterior_mean", posterior.mean, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log(f"val/posterior_std", posterior.std, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"val/posterior_mean", posterior.mean.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"val/posterior_std", posterior.std.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.logger.experiment.add_image("val/images", grid, self.current_epoch)
+        """
+        _, hr = batch
+        output, posterior = self(hr, sample_posterior=sample_posterior)
+        _, log_dict_ae = self.loss(
+            hr, output, posterior, 0, self.global_step, last_layer=self.get_last_layer(), split="val"
+        )
+        _, log_dict_disc = self.loss(
+            hr, output, posterior, 1, self.global_step, last_layer=self.get_last_layer(), split="val"
+        )
+        images = torch.cat([hr[:4], output[:4]])
+        grid = torchvision.utils.make_grid(images, nrow=hr.size()[0])
         self.logger.experiment.add_image("val/images", grid, self.current_epoch)
 
+        self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
+        self.log_dict(log_dict_ae)
+        self.log_dict(log_dict_disc)
+        self.log(f"val/posterior_mean", posterior.mean.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log(f"val/posterior_std", posterior.std.mean(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return {**log_dict_ae, **log_dict_disc}
+
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+        # optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size = )
+        opt_ae = torch.optim.Adam(self.model.parameters(), self.learning_rate, betas=(0.5, 0.9))
+        opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(), self.learning_rate, betas=(0.5, 0.9))
+        return [opt_ae, opt_disc], []
+
+    def get_last_layer(self):
+        return self.model.decoder.conv_out.weight

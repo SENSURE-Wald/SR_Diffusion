@@ -3,25 +3,38 @@ import torch
 from omegaconf import OmegaConf
 from tqdm import tqdm
 import lightning as L
+from lightning.pytorch import loggers as pl_loggers
 import argparse
 import pathlib
 import torchvision
-
+import friendlywords
 from opensr_model.autoencoder.autoencoder import AutoencoderKLLightning
 from opensr_model.data.DOP20Dataset import DOP20Dataset, MultiSpectralDataset, ImageDataset
+from omegaconf import DictConfig, ListConfig
+from omegaconf.nodes import AnyNode
+from omegaconf.base import ContainerMetadata
+from typing import Any
+
+torch.serialization.add_safe_globals([DictConfig, ListConfig, AnyNode, ContainerMetadata, Any, dict])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-l", "--load", type=pathlib.Path)
-    config = OmegaConf.load("opensr_model/configs/config_dop20.yaml")
+    parser.add_argument("-c", "--config", type=pathlib.Path, default="opensr_model/configs/config_dop20.yaml")
     args = parser.parse_args()
+    log_name = pathlib.Path(str(args.config.name).split(".")[0] + "_" + friendlywords.generate(2, separator="-"))
+
+    config = OmegaConf.load(args.config)
     ddconfig = config.first_stage_config
     embed_dim = 4
     training_config = config.training_config
     device = training_config.device
+    seed = training_config.seed
 
-    reconstruction_loss = torch.nn.MSELoss()
+    L.seed_everything(seed)
+
+    reconstruction_loss = torch.nn.L1Loss()
     model = AutoencoderKLLightning(
         ddconfig, embed_dim, loss=reconstruction_loss, learning_rate=training_config.learning_rate
     )
@@ -54,11 +67,23 @@ if __name__ == "__main__":
         pin_memory=training_config.pin_memory,
         num_workers=training_config.num_workers,
     )
+    print(f"Logging data to: {log_name}")
+    logger = pl_loggers.TensorBoardLogger(save_dir="logs/", name=log_name, version="")
+    trainer = L.Trainer(
+        logger=logger,
+        accelerator="gpu",
+        devices=device,
+        max_epochs=training_config.epochs,
+        strategy="ddp_find_unused_parameters_true",
+    )
 
-    print(len(train_dataset), len(val_dataset))
-    trainer = L.Trainer(accelerator="gpu", devices=device, max_epochs=100)
-
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader, ckpt_path=args.load)
+    trainer.fit(
+        model,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader,
+        ckpt_path=args.load,
+        weights_only=False,
+    )
 
     lr, hr = train_dataset[0]
     output, _ = model(hr.unsqueeze(0))

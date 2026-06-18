@@ -31,6 +31,7 @@ tqdm>=4.66.0
 einops>=0.7.0
 typing-extensions>=4.10.0
 wandb>=0.17.0
+friendlywords>=1.2.0
 
 # Diffusion
 diffusers>=0.30.0

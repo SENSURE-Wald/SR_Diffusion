@@ -1,0 +1,80 @@
+# INFO
+# For ckpts >= opensr-model version 1.0, disable 'apply_normalization'
+# For ckpts >= opensr-model version 1.0, set linear_start to 0.0001 and linear_end to 0.01
+# For ckpts <  opensr-model version 1.0, set linear_start to and linear_end to 0.0015 and 0.0155 respectively
+
+# WARNING: Some of the settings  are not used in the current version of opensr-model but are kept for backwards compatibility
+
+# General Settings
+apply_normalization: False
+ckpt_version: "opensr-ldsr_dop20_v1_0_0.ckpt"
+encode_conditioning: True
+
+# Diffusion and Sampling Settings
+denoiser_settings:
+  linear_start: 0.0001 # noise start
+  linear_end: 0.0155 # noise end
+  timesteps: 1000 # Timesteps model was trained on - always 1k
+  parameterization: "eps" # ["eps" or "x0"]
+  sampling_eta: 0.95 # 0. to 1. -> 1 is more deterministic
+  sampling_temperature: 1.0 # 0. to 1.
+  sampling_steps: 100 # No of DDIM sampling steps
+
+# Autoencoder Settings
+first_stage_config:
+  embed_dim: 4
+  double_z: true
+  z_channels: 4
+  resolution: 400
+  in_channels: 3
+  out_ch: 3
+  ch: 128
+  ch_mult: [1, 2, 4]
+  num_res_blocks: 2
+  attn_resolutions: []
+  dropout: 0.0
+  kl_loss_weight: 0.0000001
+  kl_warmup_steps: 50000
+
+# Denoising UNet Settings
+cond_stage_config:
+  image_size: 100
+  in_channels: 8
+  model_channels: 160
+  out_channels: 3
+  num_res_blocks: 2
+  attention_resolutions: [16, 8]
+  channel_mult: [1, 2, 2, 4]
+  num_head_channels: 32
+
+dataset_config:
+  type: "paired"
+  lr_dataset: 
+    data_path: "data/DOP20/s2_tiles_all"
+    channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    rgb_channels: [3, 2, 1]
+    file_type: "npy"
+    image_size: [100, 100]
+    scaling: 3000
+
+  hr_dataset:
+    data_path: "data/DOP20/dop20_tiles_harm"
+    image_size: [400, 400]
+
+training_config:
+  batch_size: 4
+  learning_rate: 0.0000045
+  shuffle: True
+  pin_memory: False
+  num_workers: 64
+  device: [0, 1, 2, 3, 4, 5, 6, 7]
+  seed: 42
+
+
+# other settings
+other:
+  concat_mode: True
+  cond_stage_trainable: False
+  first_stage_key: "image"
+  cond_stage_key: "LR_image"
+

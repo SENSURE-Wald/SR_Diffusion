@@ -1,10 +1,13 @@
 from torch.utils.data import Dataset
+import torch
 import numpy as np
 import pathlib
 from typing import Tuple
 from PIL import Image
 from opensr_model.data.harmonization import get_harmonizer
 from torchvision import transforms
+
+from opensr_model.utils import load_tif, load_jpg
 
 
 class MultiSpectralDataset(Dataset):
@@ -16,7 +19,8 @@ class MultiSpectralDataset(Dataset):
         channels: list[int] = [0, 1, 2],
         rgb_channels: list[int] = [2, 1, 0],
         file_type="npy",
-        scaling_factor=3000.0,
+        gain=3,
+        clamp=True,
         **kwargs,
     ):
         self.data_path = pathlib.Path(data_path)
@@ -24,27 +28,32 @@ class MultiSpectralDataset(Dataset):
         self.channels = channels
         self.rgb_channels = rgb_channels
         self.file_type = file_type
-        self.scaling_factor = scaling_factor
-        self.reordered_indices = channels.copy()
-        for i, idx in enumerate(self.rgb_channels):
-            self.reordered_indices[i] = self.channels[idx]
+        self.gain = gain
+        self.clamp = clamp
+        if file_type == "npy":
+            self._load_function = np.load
+        elif file_type == "jpg":
+            self._load_function = load_jpg
+        else:
+            self._load_function = load_tif
 
-        for i, idx in enumerate(self.rgb_channels):
-            self.reordered_indices[i] = self.channels[idx]
+        rgb = [channels[i] for i in rgb_channels]
+        rest = [c for c in channels if c not in rgb]
+        self.reordered_indices = rgb + rest
         # self.image_paths = sorted(list(self.data_path.rglob(f"**/{self.file_type}")))
         self.image_paths = sorted(list(self.data_path.rglob(f"*.{self.file_type}")))
 
     def __getitem__(self, i):
         path = self.image_paths[i]
-        img = self._load_function(path)
+        img = self._load(path)
         img = transforms.Resize(self.image_size)(img)
         # Reorder to be in RGB order
         img = img[self.reordered_indices, ...]
-        # Get only the channels that are relevant
         return img
 
-    def _load_function(self, path):
-        return transforms.ToTensor()(np.load(path).transpose(1, 2, 0)) / self.scaling_factor
+    def _load(self, path):
+        img = (transforms.ToTensor()(self._load_function(path).transpose(1, 2, 0))).to(torch.float32) * self.gain
+        return img.clamp(0, 1.0) if self.clamp else img
 
     def __len__(self):
         return len(self.image_paths)
@@ -58,16 +67,10 @@ class ImageDataset(MultiSpectralDataset):
         channels: list[int] = [0, 1, 2],
         rgb_channels: list[int] = [0, 1, 2],
         file_type="jpg",
+        gain=1.0,
         **kwargs,
     ):
-        super().__init__(data_path, image_size, channels, rgb_channels, file_type)
-
-    def _load_function(self, path):
-        # with rasterio.open(path) as src:
-        #    arr = src.read(masked=True)  # MaskedArray for all bands
-        #    arr_filled = arr.filled(0)  #
-        # return ToTensor()(arr_filled)
-        return transforms.ToTensor()(Image.open(path))
+        super().__init__(data_path, image_size, channels, rgb_channels, file_type, gain=gain)
 
 
 class PairedImageDataset(Dataset):
@@ -93,5 +96,6 @@ class DOP20Dataset(PairedImageDataset):
 
     def __getitem__(self, index):
         lr, hr = self.dataset_0[index], self.dataset_1[index]
-        hr_transformed = self.harmonizer(lr[0:3, :], hr)
-        return lr, hr_transformed
+        hr_transformed = self.harmonizer(lr[:3, :], hr[:3, :])
+        hr[0:3, :] = hr_transformed
+        return lr, hr

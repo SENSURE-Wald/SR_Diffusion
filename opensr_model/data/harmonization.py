@@ -1,7 +1,7 @@
 from typing import Optional
 
 import torch
-from abc import ABC, abstractmethod
+import torch.nn.functional as F
 from opensr_model.utils import hq_histogram_matching, gaussian_blur_channelwise
 
 
@@ -60,9 +60,19 @@ class ColouringHarmonizer(Harmonizer):
     Code and method based on: https://github.com/AronKovacs/g-style
     """
 
-    def __init__(self, eps=1e-8):
+    def __init__(self, eps=1e-8, min_pixels=100):
         super().__init__()
         self.eps = eps
+        self.min_pixels = min_pixels
+
+    @staticmethod
+    def _masked_stats(img, mask):
+        """img: [N, C], mask: [N] bool (True = don't use pixel)"""
+        x = img[~mask]
+        mu = x.mean(0, keepdim=True)
+        xc = x - mu
+        cov = xc.T @ xc / float(x.size(0))
+        return mu, cov
 
     @staticmethod
     def apply_color_match(img, alpha, beta):
@@ -72,26 +82,29 @@ class ColouringHarmonizer(Harmonizer):
         img = img.reshape(h, w, c).permute(2, 0, 1)  # [bs, h * w, c] -> [bs, c, h, w]
         return torch.clamp(img, 0.0, 1.0)
 
-    @staticmethod
-    def find_color_match(input_image, gt_image):
+    def find_color_match(self, input_image, gt_image, mask=None):
         """
         input_img: [C, H, W]
-        gt_image: [C, H, W]
+        gt_image:  [C, H, W]
+        mask:      [H, W]     True = unclear / invalid pixel
         """
-        gt_image = gt_image.permute(1, 2, 0)
-        input_image = input_image.permute(1, 2, 0).to(gt_image.device)
-        gt_image = gt_image.reshape(-1, 3)
-        input_image = input_image.reshape(-1, 3)
+        c = gt_image.shape[0]
+        gt = gt_image.permute(1, 2, 0).reshape(-1, c)
+        inp = input_image.permute(1, 2, 0).reshape(-1, c).to(gt.device)
+
+        if mask is None:
+            mask = torch.zeros(gt.shape[0], dtype=torch.bool, device=gt.device)
+
+        else:
+            mask = mask.reshape(-1).to(device=gt.device, dtype=torch.bool)
+
+        if (~mask).sum() < self.min_pixels:
+            return torch.eye(c, device=gt.device), torch.zeros(1, c, device=gt.device)
+
         # Mean values
-        mu_c = gt_image.mean(0, keepdim=True)
-        mu_s = input_image.mean(0, keepdim=True)
-        """
-        image_set: [H, W, C]
-        style_img: [H, W, C]
-        """
-        # Covariance
-        cov_c = torch.matmul((gt_image - mu_c).T, gt_image - mu_c) / float(gt_image.size(0))
-        cov_s = torch.matmul((input_image - mu_s).T, input_image - mu_s) / float(input_image.size(0))
+        mu_c, cov_c = self._masked_stats(gt, mask)
+        mu_s, cov_s = self._masked_stats(inp, mask)
+
         # N, 3, 3
         # Cov(I_c) = Φ_c Λ_c^{1/2} Λ_c^{1/2} Φ_c^T
         u_c, sig_c, _ = torch.svd(cov_c)
@@ -114,8 +127,14 @@ class ColouringHarmonizer(Harmonizer):
 
         return alpha, beta
 
-    def forward(self, lr: torch.Tensor, hr: torch.Tensor):
-        alpha, beta = self.find_color_match(lr, hr)
+    def forward(self, lr: torch.Tensor, hr: torch.Tensor, invalid_mask: torch.Tensor = None):
+        # Downsample the DOP to the Sentinel grid for estimating the transform only
+        if hr.shape[-2:] != lr.shape[-2:]:
+            hr_small = F.interpolate(hr[None], size=lr.shape[-2:], mode="area")[0]
+        else:
+            hr_small = hr
+
+        alpha, beta = self.find_color_match(lr, hr_small, invalid_mask)
         return self.apply_color_match(hr, alpha, beta)
 
 

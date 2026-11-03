@@ -49,6 +49,7 @@ cond_stage_config:
   channel_mult: [1, 2, 2, 4]
   num_head_channels: 32
 
+
 dataset_config:
   type: "paired"
   lr_dataset: 
@@ -64,13 +65,13 @@ dataset_config:
     image_size: [400, 400]
 
 training_config:
-  batch_size: 4
+  batch_size: 8
   learning_rate: 0.0000045
   shuffle: True
   pin_memory: False
-  num_workers: 64
+  num_workers: 32
   device: [2, 3, 4, 5, 6, 7]
-  seed: 42
+  seed: 17
   epochs: 300
 
 

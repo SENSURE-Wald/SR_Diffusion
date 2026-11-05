@@ -8,6 +8,7 @@
 # -----------------------------------------------------------------------------------
 
 import math
+from typing import List
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,15 +19,23 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 import piq
 from pytorch_lightning.utilities import rank_zero_only
-import torchvision
 
 from opensr_model.transformer.losses.metric_loss import cc_loss
 from opensr_model.transformer.losses.ndvi_loss import NDVILoss
 from opensr_model.transformer.losses.swt_loss import SWTLoss
 
-from opensr_model.transformer.utils import window_reverse, Mlp, window_partition, ndvi, colorize
+from opensr_model.transformer.utils import (
+    create_image_grid,
+    log_image_output,
+    window_reverse,
+    Mlp,
+    window_partition,
+    ndvi,
+    colorize,
+)
 from opensr_model.transformer.HFM import one_module
 from opensr_model.transformer.losses.similarity_loss import ChromaSimilarityLoss, DownsampleSimilarityLoss
+from opensr_model.metrics import Metric, create_metric
 
 
 def default_conv(in_channels, out_channels, kernel_size, stride=1, bias=True):
@@ -1661,9 +1670,12 @@ class Swin2SR(nn.Module):
 
 
 class SWIN2SRLightning(L.LightningModule):
-    def __init__(self, config: dict, learning_rate: float):
+    def __init__(self, config: dict, metrics: List[str] = [], learning_rate: float = 1e-4):
         super().__init__()
-        self.save_hyperparameters()
+
+        self.metrics_names = metrics
+        self.metrics = None
+        self.save_hyperparameters(ignore=["metrics"])
         self.model = Swin2SR(**config)
         self.learning_rate = learning_rate
         self.wlt_loss = SWTLoss()
@@ -1686,6 +1698,22 @@ class SWIN2SRLightning(L.LightningModule):
         log_dir = self.trainer.log_dir
         if self.trainer.is_global_zero:
             print(f"Logging to: {log_dir}")
+
+        eval_metrics = []
+        for metric in self.metrics_names:
+            eval_metrics.append(create_metric(metric, device=self.device))
+
+        self.metrics = eval_metrics
+
+    def on_test_start(self):
+        if self.metrics is not None:
+            return
+
+        eval_metrics = []
+        for metric in self.metrics_names:
+            eval_metrics.append(create_metric(metric, device=self.device))
+
+        self.metrics = eval_metrics
 
     def forward(self, input: torch.Tensor):
         return self.model(input)
@@ -1820,33 +1848,38 @@ class SWIN2SRLightning(L.LightningModule):
         )
 
         if batch_idx == 0:
-            lr_upscaled = torch.nn.functional.interpolate(
-                lr[:4][:, :3, :, :], (output.shape[-2], output.shape[-1]), mode="bicubic"
-            )
-            images = torch.cat([lr_upscaled, hr[:4][:, :3, :, :], output[:4][:, :3, :, :]])
-            grid = torchvision.utils.make_grid(images, nrow=min(hr.size()[0], 4))
-            self.logger.experiment.add_image("val/images", grid, self.current_epoch)
+            log_image_output(self.logger, lr=lr, output=output, hr=hr, step=self.current_epoch, phase="val")
 
-            if hr.shape[1] == 4:
-                images = torch.cat([hr[:4, 3:4, :, :], output[:4, 3:4, :, :]])
-                grid = torchvision.utils.make_grid(images, nrow=min(hr.size()[0], 4))
-                self.logger.experiment.add_image("val/images_ir", grid, self.current_epoch)
-
-                # Compute NDVI
-                hr_red = hr[:4, 0:1, :, :]
-                hr_nir = hr[:4, 3:4, :, :]
-
-                output_red = output[:4, 0:1, :, :]
-                output_nir = output[:4, 3:4, :, :]
-
-                hr_ndvi = colorize(ndvi(hr_red, hr_nir))
-                output_ndvi = colorize(ndvi(output_red, output_nir))
-
-                images = torch.cat([hr_ndvi, output_ndvi])
-                grid = torchvision.utils.make_grid(images, nrow=min(hr.size()[0], 4))
-                self.logger.experiment.add_image("val/images_ndvi", grid, self.current_epoch)
+        self.compute_metrics(batch, phase="val")
 
         return total_loss
+
+    def test_step(self, batch, batch_idx):
+        lr, hr = batch
+        output, _ = self.model(lr)
+        output = output.clamp(min=0, max=1).contiguous()
+
+        if batch_idx == 0:
+            log_image_output(self.logger, lr=lr, output=output, hr=hr, step=self.current_epoch, phase="test")
+
+        self.compute_metrics(batch, phase="test")
+
+    def compute_metrics(self, batch, phase="val"):
+        lr, hr = batch
+        output, _ = self.model(lr)
+        output = output.clamp(min=0, max=1).contiguous()
+
+        for metric in self.metrics:
+            metric_value = metric(hr, output)
+            self.log(
+                f"{phase}/{metric.name()}",
+                metric_value,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.model.parameters(), self.learning_rate)

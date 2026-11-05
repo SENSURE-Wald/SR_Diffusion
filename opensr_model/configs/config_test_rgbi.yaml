@@ -1,0 +1,43 @@
+
+transformer_config:
+    upscale: 4
+    in_chans: 13
+    depths: [6, 6, 6, 6]
+    embed_dim: 90
+    img_range: 1.
+    img_size: 64
+    mlp_ratio: 2
+    num_heads: [6, 6, 6, 6]
+    resi_connection: 1conv
+    upsampler: pixelshuffle
+    window_size: 16
+    ndvi_loss: True
+    output_chans: 4
+
+dataset_config:
+  type: "paired"
+  lr_dataset: 
+    data_path: "/big_storage/data/dop/HE/s2"
+    channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    rgb_channels: [3, 2, 1]
+    file_type: "tif"
+    image_size: [100, 100]
+    gain: 3
+
+  hr_dataset:
+    data_path: "/big_storage/data/dop/HE/dop_h"
+    file_type: "tif"
+    channels: [0, 1, 2, 3]
+    image_size: [400, 400]
+    gain: 1
+
+testing_config:
+  batch_size: 6
+  pin_memory: False
+  seed: 42
+  num_workers: 32
+  device: [2]
+  metrics: ["PSNR", "SSIM", "LPIPS"]
+  checkpoint: "logs/config_transformer_rgbi_vine-bread"
+  
+

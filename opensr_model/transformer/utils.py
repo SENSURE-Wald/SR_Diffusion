@@ -6,8 +6,47 @@ import random
 
 from enum import Enum
 from torchmetrics.classification import MulticlassF1Score
+import torchvision
 
 from matplotlib.colors import LinearSegmentedColormap
+
+
+def create_image_grid(*images, nrow=4):
+    size = images[0].size()[0]
+    images = torch.cat(images, dim=0)
+    grid = torchvision.utils.make_grid(images, nrow=min(size, nrow))
+    return grid
+
+
+def log_image_output(logger, lr, output, hr, step, phase="val"):
+    lr_upscaled = torch.nn.functional.interpolate(
+        lr[:4][:, :3, :, :], (output.shape[-2], output.shape[-1]), mode="bicubic"
+    )
+    grid = create_image_grid(lr_upscaled, hr[:4][:, :3, :, :], output[:4][:, :3, :, :])
+    logger.experiment.add_image(f"{phase}images", grid, step)
+
+    if hr.shape[1] == 4:
+        grid = create_image_grid(hr[:4, 3:4, :, :], output[:4, 3:4, :, :])
+        logger.experiment.add_image(f"{phase}/images_ir", grid, step)
+
+        # Compute NDVI
+        hr_red = hr[:4, 0:1, :, :]
+        hr_nir = hr[:4, 3:4, :, :]
+
+        output_red = output[:4, 0:1, :, :]
+        output_nir = output[:4, 3:4, :, :]
+
+        hr_ndvi = colorize(ndvi(hr_red, hr_nir))
+        output_ndvi = colorize(ndvi(output_red, output_nir))
+
+        grid = create_image_grid(hr_ndvi, output_ndvi)
+        logger.experiment.add_image(f"{phase}/images_ndvi", grid, step)
+
+        # Add CIR Images
+        hr_cir = hr[:4, (3, 0, 1)]
+        output_cir = output[:4, (3, 0, 1)]
+        grid = create_image_grid(hr_cir, output_cir)
+        logger.experiment.add_image(f"{phase}/images_cir", grid, step)
 
 
 def ndvi(red, nir, eps=1e-8):

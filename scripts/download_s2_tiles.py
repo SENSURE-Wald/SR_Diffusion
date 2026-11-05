@@ -1,21 +1,17 @@
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
-from PIL import Image
 import io
 import numpy as np
-import matplotlib.pyplot as plt
 from pyproj import Transformer
 import rasterio
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import calculate_default_transform
 from dotenv import load_dotenv
 import pathlib
 import os
 import argparse
 import datetime
-import json
 import textwrap
 from tqdm import tqdm
-import requests
 import time
 
 load_dotenv()

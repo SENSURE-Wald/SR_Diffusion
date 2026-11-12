@@ -95,7 +95,7 @@ def get_possible_dates_from_catalog(bbox_4326, from_date, to_date, date, limit=1
     def distance_to_date(catalog_entry):
         catelog_date_str = catalog_entry
 
-        catalog_date = datetime.datetime.fromisoformat(catelog_date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+        catalog_date = datetime.datetime.strptime(catelog_date_str[:19], "%Y-%m-%dT%H:%M:%S") # drop fractions as they cause errors in python<3.11
         return abs(catalog_date - date)
 
     return sorted({f["properties"]["datetime"] for f in features}, key=distance_to_date)
@@ -162,7 +162,7 @@ def get_best_date_for_roi(bbox_32632, bbox_4326, from_date, to_date, flight_date
     candidates = get_possible_dates_from_catalog(bbox_4326, from_date, to_date, flight_date)
     best_date, best_frac, best_scl = None, threshold, None
     for date_str in candidates:
-        date = datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+        date = datetime.datetime.strptime(date_str[:19], "%Y-%m-%dT%H:%M:%S")
         frac, scl = get_roi_cloud_fraction(bbox_32632, date=date)
         if frac is None:
             continue
@@ -248,10 +248,15 @@ for file in tqdm(sorted(args.INPUT.rglob("*.tif"))):
     margin_days = 7
     split_file_name = file_name.split("_")
     coords = list(map(float, split_file_name[2:4]))
-    date = split_file_name[-1].split(".")[0]
-    date = datetime.datetime.strptime(date, "%Y-%m-%d")
-    from_date = date - datetime.timedelta(days=margin_days)
-    to_date = date + datetime.timedelta(days=margin_days)
+    date_str = split_file_name[-1].split(".")[0]
+    if len(date_str) == 4:
+        year = int(date_str)
+        date = datetime.datetime(year, 6, 15) # prefer mid-June (leaf-on season) for year-only dates
+        from_date, to_date = datetime.datetime(year, 4, 1), datetime.datetime(year, 9, 30)
+    else:
+        date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        from_date = date - datetime.timedelta(days=margin_days)
+        to_date = date + datetime.timedelta(days=margin_days)
 
     # Min easting / northing
     min_e = coords[0] * 1000
@@ -274,6 +279,7 @@ for file in tqdm(sorted(args.INPUT.rglob("*.tif"))):
         # No tile was found matching the cloud coverage
         with open(log_file_path, "w") as f:
             f.write(f"{file_name},{best_frac}, {args.cloud}\n")
+        continue
 
     best_scl = best_scl.astype(np.uint8)[np.newaxis, :, :]
     dst_crs = "EPSG:25832"

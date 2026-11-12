@@ -48,6 +48,7 @@ transformer_4326 = Transformer.from_crs("EPSG:25832", "EPSG:4326", always_xy=Tru
 def request_with_retry(method, url, max_retries=5, **kwargs):
     """
     Wraps oauth.post/get with 429 handling that respects Retry-After.
+    Also retries 5xx (transient server/gateway errors) and 401 after refreshing the token.
     """
     global headers_request
 
@@ -61,14 +62,16 @@ def request_with_retry(method, url, max_retries=5, **kwargs):
                 include_client_id=True,
             )
             headers_request = {"Authorization": f"Bearer {token['access_token']}"}
+            kwargs["headers"] = headers_request
+            continue
 
-        if response.status_code != 429:
+        if response.status_code != 429 and response.status_code < 500:
             return response
 
         retry_after = response.headers.get("Retry-After") or response.headers.get("retry-after")
-        wait_miliseconds = float(retry_after) if retry_after else (2**attempt)
+        wait_seconds = float(retry_after) / 1000 if retry_after else 2**attempt 
 
-        time.sleep(wait_miliseconds / 1000)
+        time.sleep(wait_seconds)
 
     # last attempt — raise for status so caller's existing error handling still works
     response.raise_for_status()
@@ -89,6 +92,7 @@ def get_possible_dates_from_catalog(bbox_4326, from_date, to_date, date, limit=1
 
     url = "https://sh.dataspace.copernicus.eu/catalog/v1/search"
     response = request_with_retry(oauth.post, url, headers=headers_request, json=data)
+    response.raise_for_status() # raise for clearer HTTP error instead of JSON error
 
     features = response.json()["features"]
 

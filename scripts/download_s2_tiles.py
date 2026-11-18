@@ -10,6 +10,7 @@ import pathlib
 import os
 import argparse
 import datetime
+import logging
 import textwrap
 from tqdm import tqdm
 import time
@@ -35,6 +36,11 @@ parser.add_argument("INPUT", type=pathlib.Path)
 parser.add_argument("OUTPUT", type=pathlib.Path)
 parser.add_argument(
     "-c", "--cloud", type=float, default=1, help="Fraction of cloud coverage that is considered acceptable."
+)
+parser.add_argument(
+    "--filename-date",
+    action="store_true",
+    help="Take the flight date from the file name instead of the recording_date tag (also the fallback if the tag is missing).",
 )
 
 args = parser.parse_args()
@@ -241,6 +247,30 @@ def get_tile(bbox_32632, date):
     return r.content
 
 
+def read_recording_date(file):
+    """Return the recording_date tag of a tif as datetime, or None if missing. Reads only the header."""
+    with rasterio.open(file) as src:
+        value = src.tags().get("recording_date")
+    return datetime.datetime.fromisoformat(value) if value else None
+
+
+def get_search_window(file, margin_days=7):
+    """Return (flight_date, from_date, to_date) from the recording_date tag, falling back to the file name (or if flag was set)."""
+    if not args.filename_date:
+        date = read_recording_date(file)
+        if date is not None:
+            return date, date - datetime.timedelta(days=margin_days), date + datetime.timedelta(days=margin_days)
+        logging.warning(f"[WARNING] {file.name}: missing recording_date tag, falling back to file name date")
+
+    date_str = file.name.split("_")[-1].split(".")[0]
+    if len(date_str) == 4:
+        year = int(date_str)
+        # year-only date: search the leaf-on season, prefer mid-June
+        return datetime.datetime(year, 6, 15), datetime.datetime(year, 4, 1), datetime.datetime(year, 9, 30)
+    date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    return date, date - datetime.timedelta(days=margin_days), date + datetime.timedelta(days=margin_days)
+
+
 for file in tqdm(sorted(args.INPUT.rglob("*.tif"))):
     file_name = file.name
     output_path = args.OUTPUT / file_name
@@ -249,18 +279,8 @@ for file in tqdm(sorted(args.INPUT.rglob("*.tif"))):
     if output_path.exists():
         continue
 
-    margin_days = 7
-    split_file_name = file_name.split("_")
-    coords = list(map(float, split_file_name[2:4]))
-    date_str = split_file_name[-1].split(".")[0]
-    if len(date_str) == 4:
-        year = int(date_str)
-        date = datetime.datetime(year, 6, 15) # prefer mid-June (leaf-on season) for year-only dates
-        from_date, to_date = datetime.datetime(year, 4, 1), datetime.datetime(year, 9, 30)
-    else:
-        date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-        from_date = date - datetime.timedelta(days=margin_days)
-        to_date = date + datetime.timedelta(days=margin_days)
+    coords = list(map(float, file_name.split("_")[2:4]))
+    date, from_date, to_date = get_search_window(file)
 
     # Min easting / northing
     min_e = coords[0] * 1000

@@ -1,11 +1,8 @@
 from tqdm import tqdm
 import pathlib
-import zipfile
 import argparse
 import requests
-import io
 import json
-import rasterio
 from urllib.parse import urlparse, parse_qs
 
 parser = argparse.ArgumentParser()

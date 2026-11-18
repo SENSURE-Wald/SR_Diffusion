@@ -37,8 +37,8 @@ for tif_file in tqdm(all_tifs):
     northing, easting = map(lambda x: int(x), tif_file.stem.split("_"))
     northing -= 32000
     dummy_output = f"dop20_32_{northing}_{easting}_1_by_"
-    if len(list(OUTPUT.rglob(f"{dummy_output}*"))) != 0:
-        continue
+    # if len(list(OUTPUT.rglob(f"{dummy_output}*"))) != 0:
+    #    continue
 
     with rasterio.open(tif_file, "r") as rgb_tif:
         rgb = rgb_tif.read()
@@ -53,9 +53,9 @@ for tif_file in tqdm(all_tifs):
                 if not check_rgb_cir(rgb, cir):
                     broken_tifs.append((str(tif_file), str(cir_file_name)))
                     print(
-                        f"{len(broken_tifs)} of {len(all_tifs)} have a discprecancy between the images. This is {round((len(broken_tifs) / len(all_tifs)) * 100, 4)}%"
+                        f"{output_file}:{len(broken_tifs)} of {len(all_tifs)} have a discprecancy between the images. This is {round((len(broken_tifs) / len(all_tifs)) * 100, 4)}%"
                     )
-
+                """
                 profile = rgb_tif.profile.copy()
                 profile.update(
                     {
@@ -65,6 +65,7 @@ for tif_file in tqdm(all_tifs):
                 with rasterio.open(output_file, "w+", **profile) as dst:
                     dst.write(rgb, (1, 2, 3))
                     dst.write(cir[0, :, :], 4)
+                """
         except rasterio.errors.RasterioIOError as e:
             print(f"For ({northing}, {easting}) file {tif_file}, no corresponding CIR file {cir_file_name} was found.")
             missing_tifs.append(cir_file_name)

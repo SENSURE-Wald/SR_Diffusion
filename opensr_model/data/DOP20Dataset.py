@@ -82,6 +82,13 @@ class PairedImageDataset(Dataset):
         self.dataset_0 = dataset_0
         self.dataset_1 = dataset_1
 
+        def replace_path(path: pathlib.Path, stem: pathlib.Path):
+            return stem / path.name
+
+        self.dataset_1.image_paths = list(
+            map(lambda x: replace_path(x, self.dataset_1.data_path), self.dataset_0.image_paths)
+        )
+
     def __getitem__(self, index):
         return self.dataset_0[index], self.dataset_1[index]
 

@@ -203,6 +203,8 @@ celerybeat-schedule
 # SageMath parsed files
 *.sage.py
 
+*.kml
+
 # Spyder project settings
 .spyderproject
 .spyproject

@@ -27,6 +27,8 @@ misc/
 *.geojson
 *.meta
 *.png
+*.kml
+ne_10m*
 data/*
 logs*/
 lightning_logs/

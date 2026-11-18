@@ -38,6 +38,6 @@ testing_config:
   num_workers: 32
   device: [2]
   metrics: ["PSNR", "SSIM", "LPIPS"]
-  checkpoint: "logs/config_transformer_rgbi_vine-bread"
+  checkpoint: "logs/config_transformer_rgbi_excited-crater/"
   
 

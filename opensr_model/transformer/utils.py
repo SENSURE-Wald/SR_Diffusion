@@ -23,7 +23,7 @@ def log_image_output(logger, lr, output, hr, step, phase="val"):
         lr[:4][:, :3, :, :], (output.shape[-2], output.shape[-1]), mode="bicubic"
     )
     grid = create_image_grid(lr_upscaled, hr[:4][:, :3, :, :], output[:4][:, :3, :, :])
-    logger.experiment.add_image(f"{phase}images", grid, step)
+    logger.experiment.add_image(f"{phase}/images", grid, step)
 
     if hr.shape[1] == 4:
         grid = create_image_grid(hr[:4, 3:4, :, :], output[:4, 3:4, :, :])

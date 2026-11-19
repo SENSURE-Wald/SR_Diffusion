@@ -1,11 +1,8 @@
 import argparse
 from tqdm import tqdm
 from pathlib import Path
-import rasterio
 import types
 from opensr_model.data.DOP20Dataset import ImageDataset, MultiSpectralDataset, DOP20Dataset
-from opensr_model.utils import save_to_tif
-from scripts.processing_utils import DOPProcessor
 
 parser = argparse.ArgumentParser()
 

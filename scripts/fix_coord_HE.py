@@ -113,7 +113,3 @@ with open(path.parent / "missing_tiles.txt", "w") as f:
 for entries in tiles_by_dates.values():
     if len(entries) != 1:
         print(entries)
-# georeference_file(
-#    file,
-#    output_path,
-# )

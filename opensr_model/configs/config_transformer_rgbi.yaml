@@ -17,7 +17,7 @@ transformer_config:
 dataset_config:
   type: "paired"
   lr_dataset: 
-    data_path: "/big_storage/data/dop/HE/s2"
+    data_path: "/big_storage/data/dop/HE"
     channels: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     rgb_channels: [3, 2, 1]
     file_type: "tif"
@@ -25,7 +25,7 @@ dataset_config:
     gain: 3
 
   hr_dataset:
-    data_path: "/big_storage/data/dop/HE/dop_h"
+    data_path: "/big_storage/data/dop/HE"
     file_type: "tif"
     channels: [0, 1, 2, 3]
     image_size: [400, 400]

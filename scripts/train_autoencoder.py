@@ -1,7 +1,6 @@
 from torch.utils.data import DataLoader
 import torch
 from omegaconf import OmegaConf
-from tqdm import tqdm
 import lightning as L
 from lightning.pytorch import loggers as pl_loggers
 import argparse

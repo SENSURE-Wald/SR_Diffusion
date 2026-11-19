@@ -1,4 +1,4 @@
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch
 import numpy as np
 import pathlib
@@ -106,3 +106,32 @@ class DOP20Dataset(PairedImageDataset):
         hr_transformed = self.harmonizer(lr[:3, :], hr[:3, :])
         hr[0:3, :] = hr_transformed
         return lr, hr
+
+
+def create_split(lr_config, hr_config, split: str) -> DataLoader:
+    lr_config_ = lr_config.copy()
+    hr_config_ = hr_config.copy()
+
+    lr_config_.data_path = pathlib.Path(lr_config.data_path) / split / "s2"
+    hr_config_.data_path = pathlib.Path(hr_config.data_path) / split / "dop"
+    s2_dataset = MultiSpectralDataset(**lr_config_)
+    dop20_dataset = ImageDataset(**hr_config_)
+
+    return DOP20Dataset(s2_dataset=s2_dataset, dop20_dataset=dop20_dataset, harmonizer_config=None)
+
+
+def create_dop_dataset_splits(dataset_config) -> Tuple[Dataset, Dataset, Dataset]:
+    """ "
+    Takes in the configuration for a DOP20Dataset and creates the train, val, test splits datasets from that.
+    """
+    assert dataset_config.type == "paired"
+
+    lr_config = dataset_config.lr_dataset
+    hr_config = dataset_config.hr_dataset
+
+    splits = ("train", "val", "test")
+    datasets = []
+    for split in splits:
+        datasets.append(create_split(lr_config=lr_config, hr_config=hr_config, split=split))
+
+    return (dataset for dataset in datasets)

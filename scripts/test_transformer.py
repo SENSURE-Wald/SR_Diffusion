@@ -6,7 +6,7 @@ from lightning.pytorch import loggers as pl_loggers
 import argparse
 import pathlib
 import friendlywords
-from opensr_model.data.DOP20Dataset import DOP20Dataset, MultiSpectralDataset, ImageDataset
+from opensr_model.data.DOP20Dataset import create_split
 from omegaconf import DictConfig, ListConfig
 from omegaconf.nodes import AnyNode
 from omegaconf.base import ContainerMetadata
@@ -50,19 +50,11 @@ if __name__ == "__main__":
     model = SWIN2SRLightning(ddconfig, metrics=testing_config.metrics)
 
     dataset_config = config.dataset_config
-    s2_dataset_config = dataset_config.lr_dataset
-    s2_dataset = MultiSpectralDataset(**s2_dataset_config)
 
-    dop20_dataset_config = dataset_config.hr_dataset
-    dop20_dataset = ImageDataset(**dop20_dataset_config)
-
-    dataset = DOP20Dataset(
-        s2_dataset=s2_dataset, dop20_dataset=dop20_dataset, harmonizer_config=config.get("harmonizer", None)
-    )
-    _, dataset = torch.utils.data.random_split(dataset, [0.9, 0.1])
+    test_dataset = create_split(lr_config=dataset_config.lr_dataset, hr_config=dataset_config.hr_dataset, split="test")
 
     test_dataloader = DataLoader(
-        dataset=dataset,
+        dataset=test_dataset,
         batch_size=testing_config.batch_size,
         shuffle=False,
         pin_memory=testing_config.pin_memory,

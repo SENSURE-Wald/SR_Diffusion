@@ -1,4 +1,3 @@
-from torch.utils.data import DataLoader
 import torch
 from omegaconf import OmegaConf
 from tqdm import tqdm

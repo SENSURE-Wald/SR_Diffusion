@@ -1,3 +1,4 @@
+name: "rgbi-test"
 
 transformer_config:
     upscale: 4

@@ -9,6 +9,8 @@
 apply_normalization: False
 ckpt_version: "opensr-ldsrs2_v1_0_0.ckpt"
 encode_conditioning: True
+name: "opensr"
+input_channel_indices: [0, 1, 2, 7]
 
 # Diffusion and Sampling Settings
 denoiser_settings:
@@ -55,3 +57,6 @@ other:
   first_stage_key: "image"
   cond_stage_key: "LR_image"
 
+testing_config:
+  metrics: ["PSNR", "SSIM", "LPIPS"]
+  

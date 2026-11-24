@@ -1,6 +1,7 @@
 class Strategy:
     """Base class for all strategies."""
 
-    def __init__(self, data_loader, config_path):
+    def __init__(self, data_loader, config_path, testing_config=None):
         self.data_loader = data_loader
         self.config_path = config_path
+        self.testing_config = testing_config

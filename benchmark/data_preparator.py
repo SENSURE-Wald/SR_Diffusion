@@ -1,28 +1,26 @@
-import torch
+from pathlib import Path
+
 from torch.utils.data import DataLoader
 
-from opensr_model.data.DOP20Dataset import (
-    DOP20Dataset,
-    ImageDataset,
-    MultiSpectralDataset,
-)
+from opensr_model.data.DOP20Dataset import create_split
 
 
 class DataPreparator:
-    def __init__(self, config_loader, split_ratio=0.9):
+    def __init__(self, config_loader):
         self.config_loader = config_loader
-        self.split_ratio = split_ratio
 
     def prepare_data(self):
-        lr_dataset = MultiSpectralDataset(**self.config_loader.lr_dataset_config)
-    
-        hr_dataset = ImageDataset(**self.config_loader.hr_dataset_config)
-
-        dataset = DOP20Dataset(
-            s2_dataset=lr_dataset, dop20_dataset=hr_dataset, harmonizer_config=self.config_loader.yaml.get("harmonizer", None)
+        lr_path = Path(self.config_loader.lr_dataset_config.data_path) / "test" / "s2"
+        hr_path = Path(self.config_loader.hr_dataset_config.data_path) / "test" / "dop"
+        print(f"[Benchmark] Loading test split: LR={lr_path}, HR={hr_path}", flush=True)
+        dataset = create_split(
+            lr_config=self.config_loader.lr_dataset_config,
+            hr_config=self.config_loader.hr_dataset_config,
+            split="test",
         )
-
-        _, dataset = torch.utils.data.random_split(dataset, [self.split_ratio, 1-self.split_ratio])
+        print(f"[Benchmark] Found {len(dataset)} test samples.", flush=True)
+        if len(dataset) == 0:
+            raise ValueError("The test split is empty. Check the dataset paths (<root>/test/s2 and <root>/test/dop).")
 
         return DataLoader(
             dataset=dataset,

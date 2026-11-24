@@ -41,12 +41,14 @@ class LightningModelTester(ModelTester):
 
     def prepare_checkpoint(self):
         chkpts_path = pathlib.Path(self.config.testing_config.checkpoint)
-        sorted_chkpts = sorted(chkpts_path.rglob("*.ckpt"), reverse=True)
+        sorted_chkpts = [chkpts_path] if chkpts_path.is_file() else sorted(chkpts_path.rglob("*.ckpt"), reverse=True)
+        if not sorted_chkpts:
+            raise FileNotFoundError(f"No checkpoint found at {chkpts_path}")
         self.model_wrapper.ckpt_path = sorted_chkpts[0]
 
     def test(self):
         trainer = L.Trainer(devices=self.config.testing_config.device, logger=self.init_logger())
-        trainer.test(model=self.model_wrapper.model, dataloaders=self.data_loader, ckpt_path=self.model_wrapper.ckpt_path, weights_only=self.model_wrapper.weights_only)
+        return trainer.test(model=self.model_wrapper.model, dataloaders=self.data_loader, ckpt_path=self.model_wrapper.ckpt_path, weights_only=self.model_wrapper.weights_only)
 
 class OpenSRModelTester(ModelTester):
     def __init__(self, config_loader, data_loader, model_wrapper):
@@ -64,7 +66,7 @@ class OpenSRModelTester(ModelTester):
             for name in metric_names
         ]
 
-        # Optional: Logger für TensorBoard konfigurieren.
+        # Configure the TensorBoard logger.
         logger = self.init_logger()
 
         totals = {name: 0.0 for name in metric_names}
@@ -72,13 +74,19 @@ class OpenSRModelTester(ModelTester):
 
         with torch.inference_mode():
             for batch_idx, (lr, hr) in enumerate(self.data_loader):
+                print(
+                    f"[Benchmark] OpenSR: processing batch {batch_idx + 1}/{len(self.data_loader)} "
+                    f"({num_images}/{len(self.data_loader.dataset)} samples completed).",
+                    flush=True,
+                )
                 lr = lr.to(device=device, dtype=torch.float32)
                 hr = hr.to(device=device, dtype=torch.float32)
 
-                indices = list(self.config.yaml.input_channel_indices)
+                indices = list(self.config.input_channel_indices)
                 lr_opensr = lr[:, indices, :, :].contiguous()
 
-                sr = model(lr_opensr, sampling_steps=self.config.denoiser_settings.sampling_steps)
+                # SRLatentDiffusion reads sampling settings from its own config.
+                sr = model(lr_opensr)
 
                 # look at SWIN2SRLightning class in swin2sr_enh.py
                 sr = sr.clamp(0, 1).contiguous()
@@ -106,7 +114,7 @@ class OpenSRModelTester(ModelTester):
             for name, total in totals.items()
         }
 
-        # TensorBoard: ein aggregierter Wert pro Metrik für diesen Testlauf.
+        # Log one aggregated value per metric for this test run.
         for name, value in results.items():
             logger.experiment.add_scalar(f"test/{name}", value, global_step=0)
 

@@ -1,8 +1,10 @@
-from pathlib import Path
-
 from torch.utils.data import DataLoader
 
-from opensr_model.data.DOP20Dataset import create_split
+from opensr_model.data.DOP20Dataset import (
+    DOP20Dataset,
+    ImageDataset,
+    MultiSpectralDataset,
+)
 
 
 class DataPreparator:
@@ -10,17 +12,24 @@ class DataPreparator:
         self.config_loader = config_loader
 
     def prepare_data(self):
-        lr_path = Path(self.config_loader.lr_dataset_config.data_path) / "test" / "s2"
-        hr_path = Path(self.config_loader.hr_dataset_config.data_path) / "test" / "dop"
-        print(f"[Benchmark] Loading test split: LR={lr_path}, HR={hr_path}", flush=True)
-        dataset = create_split(
-            lr_config=self.config_loader.lr_dataset_config,
-            hr_config=self.config_loader.hr_dataset_config,
-            split="test",
+        lr_config = self.config_loader.lr_dataset_config
+        hr_config = self.config_loader.hr_dataset_config
+        print(
+            f"[Benchmark] Loading evaluation data: LR={lr_config.data_path}, HR={hr_config.data_path}",
+            flush=True,
+        )
+        dataset = DOP20Dataset(
+            s2_dataset=MultiSpectralDataset(**lr_config),
+            dop20_dataset=ImageDataset(**hr_config),
+            harmonizer_config=None,
         )
         print(f"[Benchmark] Found {len(dataset)} test samples.", flush=True)
         if len(dataset) == 0:
-            raise ValueError("The test split is empty. Check the dataset paths (<root>/test/s2 and <root>/test/dop).")
+            raise ValueError(
+                f"No evaluation samples found in {lr_config.data_path}. "
+                f"Check the configured dataset paths and LR file_type ({lr_config.file_type}). "
+                f"Expected matching HR images in {hr_config.data_path}."
+            )
 
         return DataLoader(
             dataset=dataset,

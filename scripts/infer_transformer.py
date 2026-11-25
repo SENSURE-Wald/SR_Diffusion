@@ -1,15 +1,22 @@
+"""Run SWIN2SR inference on LR tiles and write SR GeoTIFFs.
+
+Usage (from the repo root, so `opensr_model` is importable):
+    python -m scripts.infer_transformer [-c opensr_model/configs/<config_file>] <lr_tiles_dir> <out_dir>
+
+<lr_tiles_dir> overrides dataset_config.lr_dataset.data_path from the config.
+"""
+
 from torch.utils.data import DataLoader
 import torch
 from omegaconf import OmegaConf
 import lightning as L
-from lightning.pytorch import loggers as pl_loggers
 import argparse
 import pathlib
-import friendlywords
 from omegaconf import DictConfig, ListConfig
 from omegaconf.nodes import AnyNode
 from omegaconf.base import ContainerMetadata
 from typing import Any
+from tqdm import tqdm
 
 import rasterio
 
@@ -20,12 +27,12 @@ torch.serialization.add_safe_globals([DictConfig, ListConfig, AnyNode, Container
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-c", "--config", type=pathlib.Path, default="opensr_model/configs/config_test_rgbi.yaml")
-    parser.add_argument("-i", "--input", type=pathlib.Path, default="florian_s2_tiles_float")
+    parser.add_argument("INPUT", type=pathlib.Path)
+    parser.add_argument("OUTPUT", type=pathlib.Path)
     args = parser.parse_args()
-    log_name = pathlib.Path(str(args.config.name).split(".")[0] + "_" + friendlywords.generate(2, separator="-"))
 
     config = OmegaConf.load(args.config)
     ddconfig = config.transformer_config
@@ -36,9 +43,13 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{testing_config.device[0]}")
 
     sorted_chkpts = sorted(chkpts_path.rglob("*.ckpt"), reverse=True)
+    if not sorted_chkpts:
+        raise FileNotFoundError(f"No .ckpt files under {chkpts_path.resolve()} (testing_config.checkpoint)")
     checkpoint = sorted_chkpts[0]
     dataset_config = config.dataset_config
     s2_dataset_config = dataset_config.lr_dataset
+    s2_dataset_config.data_path = str(args.INPUT)
+
     dataset = MultiSpectralDataset(**s2_dataset_config)
     infer_dataloader = DataLoader(
         dataset=dataset,
@@ -55,8 +66,9 @@ if __name__ == "__main__":
         metrics=testing_config.metrics,
     )
     lightning_model.to(device).eval()
+    args.OUTPUT.mkdir(parents=True, exist_ok=True)
 
-    for i, lr in enumerate(infer_dataloader):
+    for i, lr in tqdm(list(enumerate(infer_dataloader))):
         output, _ = lightning_model.model(lr.to(device))
         file = dataset.image_paths[i]
         with rasterio.open(file, "r") as tif:
@@ -73,5 +85,5 @@ if __name__ == "__main__":
                 }
             )
 
-            with rasterio.open(f"florian_ricarda_rgbi/sr_{file.name}", "w", **profile) as dst:
+            with rasterio.open(args.OUTPUT / f"sr_{file.name}", "w", **profile) as dst:
                 dst.write(output)

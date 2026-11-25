@@ -5,14 +5,13 @@ Usage (from the repo root, so `opensr_model` is importable):
 
 -i overrides dataset_config.lr_dataset.data_path from the config; omit it to use the config path.
 """
+
 from torch.utils.data import DataLoader
 import torch
 from omegaconf import OmegaConf
 import lightning as L
-from lightning.pytorch import loggers as pl_loggers
 import argparse
 import pathlib
-import friendlywords
 from omegaconf import DictConfig, ListConfig
 from omegaconf.nodes import AnyNode
 from omegaconf.base import ContainerMetadata
@@ -30,10 +29,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-c", "--config", type=pathlib.Path, default="opensr_model/configs/config_test_rgbi.yaml")
-    parser.add_argument("-i", "--input", type=pathlib.Path, default=None)
-    parser.add_argument("-o", "--output", type=pathlib.Path, default="florian_ricarda_rgbi")
+    parser.add_argument("INPUT", type=pathlib.Path)
+    parser.add_argument("OUTPUT", type=pathlib.Path)
     args = parser.parse_args()
-    log_name = pathlib.Path(str(args.config.name).split(".")[0] + "_" + friendlywords.generate(2, separator="-"))
 
     config = OmegaConf.load(args.config)
     ddconfig = config.transformer_config
@@ -49,8 +47,8 @@ if __name__ == "__main__":
     checkpoint = sorted_chkpts[0]
     dataset_config = config.dataset_config
     s2_dataset_config = dataset_config.lr_dataset
-    if args.input is not None:
-        s2_dataset_config.data_path = str(args.input)
+    s2_dataset_config.data_path = str(args.input)
+
     dataset = MultiSpectralDataset(**s2_dataset_config)
     infer_dataloader = DataLoader(
         dataset=dataset,
@@ -67,7 +65,7 @@ if __name__ == "__main__":
         metrics=testing_config.metrics,
     )
     lightning_model.to(device).eval()
-    args.output.mkdir(parents=True, exist_ok=True)
+    args.OUTPUT.mkdir(parents=True, exist_ok=True)
 
     for i, lr in enumerate(infer_dataloader):
         output, _ = lightning_model.model(lr.to(device))
@@ -86,5 +84,5 @@ if __name__ == "__main__":
                 }
             )
 
-            with rasterio.open(args.output / f"sr_{file.name}", "w", **profile) as dst:
+            with rasterio.open(args.OUTPUT / f"sr_{file.name}", "w", **profile) as dst:
                 dst.write(output)

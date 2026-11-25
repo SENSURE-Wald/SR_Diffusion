@@ -23,7 +23,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-c", "--config", type=pathlib.Path, default="opensr_model/configs/config_test_rgbi.yaml")
-    parser.add_argument("-i", "--input", type=pathlib.Path, default="florian_s2_tiles_float")
+    parser.add_argument("-i", "--input", type=pathlib.Path, default=None)
+    parser.add_argument("-o", "--output", type=pathlib.Path, default="florian_ricarda_rgbi")
     args = parser.parse_args()
     log_name = pathlib.Path(str(args.config.name).split(".")[0] + "_" + friendlywords.generate(2, separator="-"))
 
@@ -39,6 +40,8 @@ if __name__ == "__main__":
     checkpoint = sorted_chkpts[0]
     dataset_config = config.dataset_config
     s2_dataset_config = dataset_config.lr_dataset
+    if args.input is not None:
+        s2_dataset_config.data_path = str(args.input)
     dataset = MultiSpectralDataset(**s2_dataset_config)
     infer_dataloader = DataLoader(
         dataset=dataset,
@@ -55,6 +58,7 @@ if __name__ == "__main__":
         metrics=testing_config.metrics,
     )
     lightning_model.to(device).eval()
+    args.output.mkdir(parents=True, exist_ok=True)
 
     for i, lr in enumerate(infer_dataloader):
         output, _ = lightning_model.model(lr.to(device))
@@ -73,5 +77,5 @@ if __name__ == "__main__":
                 }
             )
 
-            with rasterio.open(f"florian_ricarda_rgbi/sr_{file.name}", "w", **profile) as dst:
+            with rasterio.open(args.output / f"sr_{file.name}", "w", **profile) as dst:
                 dst.write(output)

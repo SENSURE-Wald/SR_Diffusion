@@ -18,6 +18,31 @@ from opensr_model.transformer.swin2sr_enh import SWIN2SRLightning
 
 torch.serialization.add_safe_globals([DictConfig, ListConfig, AnyNode, ContainerMetadata, Any, dict])
 
+# A bit dirty but what can you do?
+import warnings
+import os
+
+warnings.filterwarnings("ignore", message=".*Grad strides do not match bucket view strides.*")
+torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False)
+torch.set_float32_matmul_precision("high")  # fixes the Tensor Core message
+warnings.filterwarnings("ignore", category=FutureWarning, module="timm")
+warnings.filterwarnings("ignore", message=".*isinstance\\(treespec, LeafSpec\\).*")
+warnings.filterwarnings("ignore", category=FutureWarning, module=r"timm.*")
+warnings.filterwarnings("ignore", message=r".*torch\.meshgrid.*indexing argument.*")
+warnings.filterwarnings("ignore", message=r".*Grad strides do not match bucket view strides.*")
+warnings.filterwarnings("ignore", message=r".*AccumulateGrad node's stream.*")
+warnings.filterwarnings("ignore", message=r".*isinstance\(treespec, LeafSpec\).*")
+
+# Make child processes (DDP ranks) inherit the same filters
+os.environ["PYTHONWARNINGS"] = ",".join(
+    [
+        "ignore::FutureWarning:timm",
+        "ignore:.*torch.meshgrid.*:UserWarning",
+        "ignore:.*Grad strides do not match.*:UserWarning",
+        "ignore:.*AccumulateGrad node's stream.*:UserWarning",
+    ]
+)
+
 
 @rank_zero_only
 def save_config(log_dir, config):
@@ -61,7 +86,7 @@ if __name__ == "__main__":
 
     L.seed_everything(seed)
 
-    model = SWIN2SRLightning(ddconfig, learning_rate=training_config.learning_rate)
+    model = SWIN2SRLightning(ddconfig, metrics=training_config.metrics, learning_rate=training_config.learning_rate)
 
     train_dataset, val_dataset, test_dataset = create_dop_dataset_splits(config.dataset_config)
 

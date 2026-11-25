@@ -1868,7 +1868,6 @@ class SWIN2SRLightning(L.LightningModule):
         lr, hr = batch
         output, _ = self.model(lr)
         output = output.clamp(min=0, max=1).contiguous()
-
         for metric in self.metrics:
             metric_value = metric(hr, output)
             self.log(

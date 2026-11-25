@@ -1,3 +1,10 @@
+"""Run SWIN2SR inference on LR tiles and write SR GeoTIFFs.
+
+Usage (from the repo root, so `opensr_model` is importable):
+    python -m scripts.infer_transformer -c opensr_model/configs/<config_file> -i <lr_tiles_dir> -o <out_dir>
+
+-i overrides dataset_config.lr_dataset.data_path from the config; omit it to use the config path.
+"""
 from torch.utils.data import DataLoader
 import torch
 from omegaconf import OmegaConf
@@ -20,7 +27,7 @@ torch.serialization.add_safe_globals([DictConfig, ListConfig, AnyNode, Container
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-c", "--config", type=pathlib.Path, default="opensr_model/configs/config_test_rgbi.yaml")
     parser.add_argument("-i", "--input", type=pathlib.Path, default=None)
@@ -37,6 +44,8 @@ if __name__ == "__main__":
     device = torch.device(f"cuda:{testing_config.device[0]}")
 
     sorted_chkpts = sorted(chkpts_path.rglob("*.ckpt"), reverse=True)
+    if not sorted_chkpts:
+        raise FileNotFoundError(f"No .ckpt files under {chkpts_path.resolve()} (testing_config.checkpoint)")
     checkpoint = sorted_chkpts[0]
     dataset_config = config.dataset_config
     s2_dataset_config = dataset_config.lr_dataset

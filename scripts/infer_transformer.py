@@ -1,9 +1,9 @@
 """Run SWIN2SR inference on LR tiles and write SR GeoTIFFs.
 
 Usage (from the repo root, so `opensr_model` is importable):
-    python -m scripts.infer_transformer -c opensr_model/configs/<config_file> -i <lr_tiles_dir> -o <out_dir>
+    python -m scripts.infer_transformer [-c opensr_model/configs/<config_file>] <lr_tiles_dir> <out_dir>
 
--i overrides dataset_config.lr_dataset.data_path from the config; omit it to use the config path.
+<lr_tiles_dir> overrides dataset_config.lr_dataset.data_path from the config.
 """
 
 from torch.utils.data import DataLoader

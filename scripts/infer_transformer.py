@@ -16,6 +16,7 @@ from omegaconf import DictConfig, ListConfig
 from omegaconf.nodes import AnyNode
 from omegaconf.base import ContainerMetadata
 from typing import Any
+from tqdm import tqdm
 
 import rasterio
 
@@ -47,7 +48,7 @@ if __name__ == "__main__":
     checkpoint = sorted_chkpts[0]
     dataset_config = config.dataset_config
     s2_dataset_config = dataset_config.lr_dataset
-    s2_dataset_config.data_path = str(args.input)
+    s2_dataset_config.data_path = str(args.INPUT)
 
     dataset = MultiSpectralDataset(**s2_dataset_config)
     infer_dataloader = DataLoader(
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     lightning_model.to(device).eval()
     args.OUTPUT.mkdir(parents=True, exist_ok=True)
 
-    for i, lr in enumerate(infer_dataloader):
+    for i, lr in tqdm(list(enumerate(infer_dataloader))):
         output, _ = lightning_model.model(lr.to(device))
         file = dataset.image_paths[i]
         with rasterio.open(file, "r") as tif:
